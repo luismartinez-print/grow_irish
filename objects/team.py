@@ -9,6 +9,7 @@ class Team:
         self.conference = conference
         self.roster = []
         self.mean_height = 0
+        self.mean_weight = 0
         self.positions = []
         self.years = []
 
@@ -16,19 +17,39 @@ class Team:
     def create_roster(self, file_path):
         df = pd.read_csv(file_path)
 
+        df_columns_upper = [col.upper() for col in df.columns]
+        weight_column_exists = "WEIGHT" in df_columns_upper
+        
+
+        weight_col_name = None
+        if weight_column_exists:
+            
+            weight_col_name = df.columns[df_columns_upper.index("WEIGHT")]
+
         for row_tuple in df.itertuples(index=False):
+            
+
+            if weight_column_exists:
+
+                player_weight = getattr(row_tuple, weight_col_name)
+            else:
+ 
+                player_weight = None
+
+            
             player = Player(
                 name = row_tuple.Name,
                 height= row_tuple.height,
                 year= row_tuple.Class,
-                position=row_tuple.POSITION
+                position=row_tuple.POSITION,
+                weight=player_weight 
             )
             self.roster.append(player)
+    
         for player in self.roster:
             self.positions.append(player.position)
         for player in self.roster:
             self.years.append(player.year)
-
 
     def get_roster_stats(self):
         for player in self.roster:
@@ -36,6 +57,15 @@ class Team:
         
         self.mean_height = self.mean_height / len(self.roster)
         
+        if self.roster[0].weight is not None:
+            for player in self.roster:
+                self.mean_weight += player.weight
+            self.mean_weight = self.mean_weight / len(self.roster)
+
+
+    
+
+
     def get_position_distribution(self):
         temp_df = pd.DataFrame({
             "Position": self.positions
