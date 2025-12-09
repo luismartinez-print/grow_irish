@@ -2,11 +2,9 @@ import streamlit as st
 import pandas as pd
 from objects.team import Team
 
-
-team = Team("Notre Dame Hockey", "ACC")
-
-
-st.set_page_config(page_title="Grow Irish Project")
+#### Main Page Configuration #####
+icon = "Nd_athletics_gold_logo_2015.svg.png"
+st.set_page_config(page_title="Grow Irish Project", page_icon= icon, layout="wide")
 
 st.title("Team Travel Analyzer")
 
@@ -27,15 +25,21 @@ if players:
     team.create_roster(players)
     st.success("Players successfully uploaded")
     
-    st.subheader("Summary Stats")
-    team.get_roster_stats()
-    st.write(f"The mean height of the {team.name} is {team.mean_height:.2f}")
-    if team.mean_weight > 0:
-        st.write(f"The mean weight of the team {team.name} is {team.mean_weight:.2f}")
-    st.subheader("Position Count Distribution")
-    team.get_position_distribution()
-    st.subheader("Class Distribution")
-    team.get_class_distribution()
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.subheader("Summary Stats")
+        team.get_roster_stats()
+        st.write(f"The mean height of the {team.name} is {team.mean_height:.2f}")
+        if team.mean_weight > 0:
+            st.write(f"The mean weight of the team {team.name} is {team.mean_weight:.2f}")
+    with col2:
+        st.subheader("Position Count Distribution")
+        team.get_position_distribution()
+    
+    with col3:
+        st.subheader("Class Distribution")
+        team.get_class_distribution()
     #come up with more ideas for distribution and data analysis
 
 travel = st.file_uploader("Upload Travel Information", type = 'csv')
