@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
 from objects.team import Team
+import folium
+from streamlit_folium import folium_static
+from arenas import cities
+
 
 #### Main Page Configuration #####
 icon = "Nd_athletics_gold_logo_2015.svg.png"
@@ -45,10 +49,74 @@ if players:
 travel = st.file_uploader("Upload Travel Information", type = 'csv')
 ## add function to create travel info
 ### Create some summary stats for the traveling information
+st.subheader("Distance and destinations map")
+
+gmaps_client = team.initialize_client()
+
+
+if gmaps_client is None:
+    st.warning("Error initializing the client API")
+
+target_cities = cities
+df_full, nd_coords = team.get_travel_info(gmaps_client, target_cities)
+
+st.sidebar.header("Filter Destinations")
+
+selected_oponents = st.sidebar.multiselect(
+    "Select Away Games",
+    options=df_full['Opponent'].unique(),
+    default=df_full['Opponent'].to_list()
+)
+
+df_filtered = df_full[df_full['Opponent'].isin(selected_oponents)]
+
+st.subheader("Travel Matrix for Selected Games")
+
+st.dataframe(df_filtered.drop(['Lat', 'Lng', 'Status'], axis = 1), use_container_width=True)
+
+st.header("Away Game Map")
+
+m = folium.Map(
+    location = [nd_coords['lat'], nd_coords['lng']],
+    zoom_start = 4,
+    tiles = "CartoDB positron"
+)
+folium.Marker(
+    location = [nd_coords['lat'], nd_coords['lng']],
+    popup="Notre Dame",
+    icon = folium.Icon(color='green', icon = 'Home')
+).add_to(m)
+
+for index, row in df_filtered.iterrows():
+    # HTML content for the interactive popup
+    html = f"""
+    <h4>{row['Opponent']} ({row['Destination']})</h4>
+    <p><b>Driving:</b> {row['Driving Distance']} ({row['Driving Time']})</p>
+    <p><b>Flying (Est):</b> {row['Flight Distance (mi)']} ({row['Flight Time (est.)']})</p>
+    """
+    iframe = folium.IFrame(html, width=250, height=130)
+    popup = folium.Popup(iframe, max_width=260)
+
+    folium.Marker(
+        location=[row['Lat'], row['Lng']],
+        popup=popup,
+        icon=folium.Icon(color='red', icon='plane')
+    ).add_to(m)
+
+    # Render the map in Streamlit
+folium_static(m, width=900, height=500)
+
+
+
 
 games = st.file_uploader("Upload Game History", type='csv')
 #add function to create games
 ### Create some summary stats for the games info 
+
+if games:
+    team.create_games(games)
+    st.success("Games Created!")
+    team.get_srs_comparison()
 
 
 
