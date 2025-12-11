@@ -1,0 +1,324 @@
+---
+title: "ND Hockey Data"
+format:
+  html:
+    toc: true
+    toc-location: left
+    self-contained: true
+jupyter: python3
+kernel: grow_irish
+---
+## READ IN 2025 DATA
+```{python}
+import requests
+from bs4 import BeautifulSoup
+import re
+link = 'https://fightingirish.com/boxscore/444175/'
+
+link_req = requests.get(link)
+BeautifulSoup(link_req.content)
+```
+
+```{python}
+link = 'https://fightingirish.com/boxscore/444175/'
+headers = {
+    'Referer':'https://fightingirish.com/sports/mhockey/schedule/',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15'
+}
+response = requests.get(link, headers=headers)
+soup = BeautifulSoup(response.text, 'html.parser')
+iframe = soup.select('wmt-stats-iframe')
+iframe_src = iframe[0].get('path')
+iframe_src = re.search(r'\d+', iframe_src)[0]
+
+source_link = f'https://api.wmt.games/api/statistics/games/{iframe_src}?with[0]=actions&with[1]=players&with[2]=plays&with[3]=drives&with[4]=penalties'
+
+table_req = requests.get(source_link, headers=headers)
+
+table_req.json()
+```
+
+```{python}
+import requests
+from bs4 import BeautifulSoup
+
+schedule_url = "https://fightingirish.com/sports/mhockey/schedule/"
+
+headers = {
+    'Referer': schedule_url,
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15'
+}
+
+schedule_req = requests.get(schedule_url, headers=headers)
+soup = BeautifulSoup(schedule_req.text, "html.parser")
+
+links = soup.select("a[href*='/boxscore/']")
+boxscore_urls = ["https://fightingirish.com" + x.get("href") for x in links]
+boxscore_urls = [
+    url.replace("https://fightingirish.comhttps://fightingirish.com",
+                "https://fightingirish.com")
+    for url in boxscore_urls
+]
+
+boxscore_urls[:10], len(boxscore_urls)
+```
+
+```{python}
+def get_boxscore_json(boxscore_url):
+    r = requests.get(boxscore_url, headers=headers)
+    soup = BeautifulSoup(r.text, 'html.parser')
+
+    iframe = soup.select('wmt-stats-iframe')
+    iframe_src = iframe[0].get('path')
+    game_id = re.search(r'\d+', iframe_src)[0]
+
+    api_link = (
+        f'https://api.wmt.games/api/statistics/games/{game_id}'
+        '?with[0]=actions&with[1]=players&with[2]=plays&with[3]=drives&with[4]=penalties'
+    )
+    j = requests.get(api_link, headers=headers).json()
+    j["source_url"] = boxscore_url
+    return j
+```
+
+```{python}
+all_games = []
+
+for url in boxscore_urls:
+    try:
+        game_json = get_boxscore_json(url)
+        game_json["source_url"] = url
+        all_games.append(game_json)
+        print(url)
+    except Exception as e:
+        print("FAILED:", url, e)
+```
+
+## PUT 2025 DATA IN DATAFRAME
+```{python}
+# full df with home games
+import pandas as pd
+rows = []
+
+for game in all_games:
+    game_id = game["data"]["id"]
+    season = game["data"]['season_academic_year']
+    date = game["data"]["game_date"]
+    time_zone = game["data"]['local_time_zone']
+    neutral_site = game["data"]['neutral_site']
+    team1_home = game['data']['competitors'][0]['homeTeam']
+    team2_home = game['data']['competitors'][1]['homeTeam']
+    team1_name = game['data']['competitors'][0]['nameTabular']
+    team2_name = game['data']['competitors'][1]['nameTabular']
+    team1_score = game['data']['competitors'][0].get('score')
+    team2_score = game['data']['competitors'][1].get('score')
+
+    if team1_score is not None and team2_score is not None:
+        win = team1_score > team2_score
+    else:
+        win = None 
+
+    rows.append({
+        "game_id": game_id,
+        'season': season,
+        "date": date,
+        'time_zone': time_zone,
+        'neutral': neutral_site,
+        'team1_home': team1_home,
+        'team2_home': team2_home,
+        'team1_name': team1_name,
+        'team2_name': team2_name,
+        'team1_score': team1_score,
+        'team2_score': team2_score,
+        'win': win,
+        "source_url": game["source_url"],
+    })
+
+df1 = pd.DataFrame(rows)
+df1.head(15)
+```
+
+```{python}
+# all nd away games
+rows = []
+
+for game in all_games:
+    team1_name = game['data']['competitors'][0]['nameTabular']
+    team1_home = game['data']['competitors'][0]['homeTeam']
+    team1_score = game['data']['competitors'][0].get('score')
+    team2_score = game['data']['competitors'][1].get('score')
+    if team1_score is not None and team2_score is not None:
+        win = team1_score > team2_score
+    else:
+        win = None 
+    if team1_name == 'Notre Dame' and not team1_home:
+        rows.append({
+            "game_id": game["data"]["id"],
+            'season': game["data"]['season_academic_year'],
+            "date": game["data"]["game_date"],
+            'time_zone': game["data"]['local_time_zone'],
+            'neutral': game["data"]['neutral_site'],
+            'team1_home': team1_home,
+            'team2_home': game['data']['competitors'][1]['homeTeam'],
+            'team1_name': team1_name,
+            'team2_name': game['data']['competitors'][1]['nameTabular'],
+            'team1_score': team1_score,
+            'team2_score': team2_score,
+            'win': win,
+            "source_url": game["source_url"],
+        })
+
+df2 = pd.DataFrame(rows)
+df2.head(15)
+```
+
+## READ IN 2024 DATA
+```{python}
+schedule2_url = "https://fightingirish.com/sports/mhockey/schedule/season/2024-25/"
+
+headers2 = {
+    'Referer': schedule2_url,
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15'
+}
+
+schedule2_req = requests.get(schedule2_url, headers=headers2)
+soup2 = BeautifulSoup(schedule2_req.text, "html.parser")
+
+links2 = soup2.select("a[href*='/boxscore/']")
+boxscore2_urls = ["https://fightingirish.com" + x.get("href") for x in links2]
+boxscore2_urls = [
+    url2.replace("https://fightingirish.comhttps://fightingirish.com",
+                "https://fightingirish.com")
+    for url2 in boxscore2_urls
+]
+
+boxscore2_urls[:10], len(boxscore2_urls)
+```
+
+```{python}
+def get_boxscore2_json(boxscore2_url):
+    r2 = requests.get(boxscore2_url, headers=headers)
+    soup2 = BeautifulSoup(r2.text, 'html.parser')
+
+    iframe2 = soup2.select('wmt-stats-iframe')
+    iframe2_src = iframe2[0].get('path')
+    game2_id = re.search(r'\d+', iframe2_src)[0]
+
+    api2_link = (
+        f'https://api.wmt.games/api/statistics/games/{game2_id}'
+        '?with[0]=actions&with[1]=players&with[2]=plays&with[3]=drives&with[4]=penalties'
+    )
+    j2 = requests.get(api2_link, headers=headers2).json()
+    j2["source_url"] = boxscore2_url
+    return j2
+```
+
+```{python}
+all2_games = []
+
+for url2 in boxscore2_urls:
+    try:
+        game2_json = get_boxscore2_json(url2)
+        game2_json["source_url"] = url2
+        all2_games.append(game2_json)
+        print(url2)
+    except Exception as e:
+        print("FAILED:", url2, e)
+```
+
+## PUT 2024 DATA IN DATAFRAME
+```{python}
+# full df with home games
+import pandas as pd
+rows2 = []
+
+for game2 in all2_games:
+    game_id = game2["data"]["id"]
+    season = game2["data"]['season_academic_year']
+    date = game2["data"]["game_date"]
+    time_zone = game2["data"]['local_time_zone']
+    neutral_site = game2["data"]['neutral_site']
+    team1_home = game2['data']['competitors'][0]['homeTeam']
+    team2_home = game2['data']['competitors'][1]['homeTeam']
+    team1_name = game2['data']['competitors'][0]['nameTabular']
+    team2_name = game2['data']['competitors'][1]['nameTabular']
+    team1_score = game2['data']['competitors'][0].get('score')
+    team2_score = game2['data']['competitors'][1].get('score')
+
+    if team1_score is not None and team2_score is not None:
+        win = team1_score > team2_score
+    else:
+        win = None 
+
+    rows2.append({
+        "game_id": game_id,
+        'season': season,
+        "date": date,
+        'time_zone': time_zone,
+        'neutral': neutral_site,
+        'team1_home': team1_home,
+        'team2_home': team2_home,
+        'team1_name': team1_name,
+        'team2_name': team2_name,
+        'team1_score': team1_score,
+        'team2_score': team2_score,
+        'win': win,
+        "source_url": game2["source_url"],
+    })
+
+df3 = pd.DataFrame(rows2)
+df3.head(15)
+```
+
+```{python}
+# all nd away games
+rows2 = []
+for game2 in all2_games:
+    team1_name = game2['data']['competitors'][0]['nameTabular']
+    team1_home = game2['data']['competitors'][0]['homeTeam']
+    if team1_name == 'Notre Dame' and not team1_home:
+      game_id = game2["data"]["id"]
+      season = game2["data"]['season_academic_year']
+      date = game2["data"]["game_date"]
+      time_zone = game2["data"]['local_time_zone']
+      neutral_site = game2["data"]['neutral_site']
+      team1_home = game2['data']['competitors'][0]['homeTeam']
+      team2_home = game2['data']['competitors'][1]['homeTeam']
+      team1_name = game2['data']['competitors'][0]['nameTabular']
+      team2_name = game2['data']['competitors'][1]['nameTabular']
+      team1_score = game2['data']['competitors'][0].get('score')
+      team2_score = game2['data']['competitors'][1].get('score')
+
+      if team1_score is not None and team2_score is not None:
+          win = team1_score > team2_score
+      else:
+          win = None 
+
+      rows2.append({
+          "game_id": game_id,
+          'season': season,
+          "date": date,
+          'time_zone': time_zone,
+          'neutral': neutral_site,
+          'team1_home': team1_home,
+          'team2_home': team2_home,
+          'team1_name': team1_name,
+          'team2_name': team2_name,
+          'team1_score': team1_score,
+          'team2_score': team2_score,
+          'win': win,
+          "source_url": game2["source_url"],
+      })
+df4 = pd.DataFrame(rows2)
+df4.head(20)
+```
+
+## COMBINE DATAFRAMES
+```{python}
+# all nd away games for both seasons
+# clean date and time columns
+combined = pd.concat([df2, df4], ignore_index=True)
+combined['game_time_est'] = combined['date'].str.extract(r'T(.*)Z')
+combined['date'] = combined['date'].str.replace(r'T(.*)$', '', regex=True)
+combined
+```
