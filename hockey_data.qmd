@@ -1,5 +1,5 @@
 ---
-title: "ND Hockey Data"
+title: "ND Hockey Analysis"
 format:
   html:
     toc: true
@@ -8,7 +8,6 @@ format:
 jupyter: python3
 kernel: grow_irish
 ---
-
 ## READ IN 2025 DATA
 ```{python}
 import requests
