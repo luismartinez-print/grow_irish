@@ -1,5 +1,5 @@
 ---
-title: "ND Hockey Analysis"
+title: "ND Hockey Data"
 format:
   html:
     toc: true
@@ -8,6 +8,7 @@ format:
 jupyter: python3
 kernel: grow_irish
 ---
+
 ## READ IN 2025 DATA
 ```{python}
 import requests
@@ -323,7 +324,7 @@ combined
 
 ## ADD TRAVEL LOGISTICS DATA
 ```{python}
-excel_path = '/Users/ashmarietta/Library/Mobile Documents/com~apple~CloudDocs/2025_fall_ndmsba/grow_irish/grow_irish/project_data.xlsx'
+excel_path = 'project_data.xlsx'
 df_hockey = pd.read_excel(excel_path,sheet_name="Mens Hockey")
 df_hockey_travel = df_hockey[
     df_hockey['location'].str.strip() != 'South Bend, IN'].copy()
