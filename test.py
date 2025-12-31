@@ -51,7 +51,7 @@ API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 ORIGIN = "University of Notre Dame, South Bend, IN"
 DESTINATION = 'NC State University, Raleigh, NC'
 
-gmaps = googlemaps.Client(key = '#####') ### ASS KEYS
+gmaps = googlemaps.Client(key = '#####') ### Add Keys
 
 try:
     matrix_result = gmaps.distance_matrix(
