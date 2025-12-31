@@ -8,6 +8,7 @@ format:
 jupyter: python3
 kernel: grow_irish
 ---
+
 ## READ IN 2025 DATA
 ```{python}
 import requests
@@ -20,7 +21,6 @@ BeautifulSoup(link_req.content)
 ```
 
 ```{python}
-link = 'https://fightingirish.com/boxscore/444175/'
 headers = {
     'Referer':'https://fightingirish.com/sports/mhockey/schedule/',
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15'
@@ -34,7 +34,6 @@ iframe_src = re.search(r'\d+', iframe_src)[0]
 source_link = f'https://api.wmt.games/api/statistics/games/{iframe_src}?with[0]=actions&with[1]=players&with[2]=plays&with[3]=drives&with[4]=penalties'
 
 table_req = requests.get(source_link, headers=headers)
-
 table_req.json()
 ```
 
@@ -320,5 +319,203 @@ df4.head(20)
 combined = pd.concat([df2, df4], ignore_index=True)
 combined['game_time_est'] = combined['date'].str.extract(r'T(.*)Z')
 combined['date'] = combined['date'].str.replace(r'T(.*)$', '', regex=True)
+combined
+```
+
+## ADD TRAVEL LOGISTICS DATA
+```{python}
+excel_path = 'project_data.xlsx'
+df_hockey = pd.read_excel(excel_path,sheet_name="Mens Hockey")
+df_hockey_travel = df_hockey[
+    df_hockey['location'].str.strip() != 'South Bend, IN'].copy()
+```
+
+```{python}
+combined['team1_name']=combined['team1_name'].str.upper()
+combined['team2_name']=combined['team2_name'].str.upper()
+```
+
+```{python}
+combined['date'] = pd.to_datetime(combined['date']).dt.date
+df_hockey_travel['travel_date'] = pd.to_datetime(df_hockey_travel['travel_date']).dt.date
+df_hockey_travel['game_date'] = pd.to_datetime(df_hockey_travel['game_date']).dt.date
+```
+
+```{python}
+overlap_cols = set(combined.columns).intersection(set(df_hockey_travel.columns))
+df_hockey_travel_clean = df_hockey_travel.drop(columns=overlap_cols)
+
+combined_merged = combined.merge(
+    df_hockey_travel_clean,
+    left_on=['date'],
+    right_on=['game_date'],
+    how='left'
+)
+combined = combined_merged.copy()
+combined = combined.drop(columns=["com", 'opponent', "trip",'travel_time','connections','delay_red_eye','performance','competition_traveled'])
+combined
+```
+
+## ADD TRAVEL STRESS DATA
+```{python}
+circadian_table = {
+    "time_zones_crossed": {
+        'EST': 0,
+        'CST': 1,
+        'GMT': 5,
+        'MST': 2,
+        "PST": 3,
+        'PDT': 3,
+        'PT': 3
+    },
+    "direction_bonus": {
+        "East": 1,
+        "West": 0
+    }
+}
+```
+
+```{python}
+travel_load_table = {
+    "total_distance": [
+        (0, 150, 0),
+        (150, 600, 1),
+        (600, 1000, 2),
+        (1000, float('inf'), 3)
+    ],
+    "duration": [
+        (0, 180, 0),
+        (180, 360, 1),
+        (360, 540, 2),
+        (540, float('inf'), 3)
+    ]
+}
+```
+
+```{python}
+logistics_table = {
+    "transport": {
+        "Charter": 1,
+        "Home": 0,
+        "Bus": 1,
+        "Commercial": 4
+    }
+}
+```
+
+```{python}
+half_life_table = {
+    "trip_score": [
+        (0, 3, 0.35),
+        (4, 8, 1.0),
+        (9, 16, 1.5),
+        (17, 25, 2.0),
+        (26, float('inf'), 2.5)
+    ]
+}
+```
+
+## GENERATE INSIGHTS FROM TRAVEL STRESS DATA
+```{python}
+import numpy as np
+def compute_circadian_score(df):
+    df["tz_score"] = df["time_zones_crossed"].map(circadian_table["time_zones_crossed"]).fillna(0)
+
+    df["direction_score"] = df["direction"].map(circadian_table["direction_bonus"]).fillna(0)
+
+    df["circadian_score"] = df["tz_score"] + df["direction_score"]
+
+    return df
+```
+
+```{python}
+combined_test = compute_circadian_score(combined.copy())
+print(combined_test[["time_zones_crossed", "direction", "tz_score", "direction_score", "circadian_score"]].head())
+```
+
+```{python}
+def score_from_ranges(value, ranges):
+    for low, high, score in ranges:
+        if low <= value < high:
+            return score
+    return None
+
+def compute_travel_load(df):
+    df["duration_score"] = df["duration"].apply(
+        lambda v: score_from_ranges(v, travel_load_table["duration"])
+    )
+    
+    df["distance_score"] = df["total_distance"].apply(
+        lambda v: score_from_ranges(v, travel_load_table["total_distance"])
+    )
+
+    df["travel_load_score"] = df["duration_score"] + df["distance_score"]
+
+    return df
+```
+
+```{python}
+combined_test = compute_travel_load(combined.copy())
+print(combined_test[["duration", "total_distance", 
+                     "duration_score", "distance_score", 
+                     "travel_load_score"]].head())
+```
+
+```{python}
+def compute_logistics_score(df):
+    df["logistics_score"] = df["transport"].map(logistics_table["transport"]).fillna(0)
+    return df
+```
+
+```{python}
+def score_from_ranges(value, ranges):
+    for low, high, score in ranges:
+        if low <= value <= high:
+            return score
+    return None
+```
+
+```{python}
+# circadian + travel_load + logistics
+def compute_trip_score(df):
+    df["trip_score"] = (
+        df["circadian_score"]
+        + df["travel_load_score"]
+        + df["logistics_score"]
+    )
+    return df
+```
+
+```{python}
+df_test = combined.copy()
+df_test = compute_circadian_score(df_test)
+df_test = compute_travel_load(df_test)
+df_test = compute_logistics_score(df_test)
+df_test = compute_trip_score(df_test)
+
+print(df_test[["circadian_score", "travel_load_score", "logistics_score", "trip_score"]].head())
+```
+
+```{python}
+df_stress = combined.copy()
+df_stress = compute_circadian_score(df_stress)
+df_stress = compute_travel_load(df_stress)
+df_stress = compute_logistics_score(df_stress)
+df_stress = compute_trip_score(df_stress)
+
+stress_output = df_stress[[
+    "circadian_score",
+    "travel_load_score",
+    "logistics_score",
+    "trip_score"
+]]
+
+print(stress_output.head(20))
+```
+
+```{python}
+# final dataframe
+for col in stress_output.columns:
+    combined[col] = df_stress[col]
 combined
 ```
